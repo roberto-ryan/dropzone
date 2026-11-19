@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Dropzone: Flight &amp; Skydive Simulator</title>
+<style>
+  :root { --ink: #f4f6f8; --dim: rgba(244,246,248,.62); --panel: rgba(10,14,20,.46); --line: rgba(255,255,255,.16); --accent: #ff7a2f; --go: #37d67a; --warn: #ffd23f; --bad: #ff4d4d; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0f14; color: var(--ink); font: 500 14px/1.35 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,.30) 100%); }
+  #whiteout { position: fixed; inset: 0; pointer-events: none; background: #e9eef4; opacity: 0; }
+  #flash { position: fixed; inset: 0; pointer-events: none; background: #000; opacity: 0; transition: opacity .5s; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  [hidden] { display: none !important; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+  #top { position: absolute; top: max(10px, 1.6vh); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+  .pill { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; gap: 8px; align-items: center; }
+  .pill b { font-weight: 700; letter-spacing: .04em; }
+  #light { width: 10px; height: 10px; border-radius: 50%; background: #c33; box-shadow: 0 0 8px currentColor; color: #c33; }
+  #light.go { background: var(--go); color: var(--go); }
+  #dzArrow { display: inline-block; width: 16px; height: 16px; transition: transform .12s linear; }
+  #banner { position: absolute; top: 19%; left: 0; right: 0; text-align: center; font-size: clamp(22px, 5.2vmin, 54px); font-weight: 800; letter-spacing: .08em; opacity: 0; transition: opacity .25s; }
+  #banner.show { opacity: 1; }
+  #banner small { display: block; font-size: .38em; font-weight: 600; letter-spacing: .06em; color: var(--dim); margin-top: .3em; }
+  #banner.warn { color: var(--warn); } #banner.bad { color: var(--bad); } #banner.go { color: var(--go); }
+  #inst { position: absolute; left: max(10px, 1.6vw); top: max(52px, 9vh); display: grid; grid-template-columns: auto auto; gap: 2px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  #inst span { color: var(--dim); font-size: 11px; letter-spacing: .08em; align-self: center; }
+  #inst b { font-size: clamp(15px, 2.6vmin, 20px); font-weight: 700; text-align: right; min-width: 4.6em; }
+  #inst b i { font-style: normal; font-size: .62em; color: var(--dim); margin-left: 3px; font-weight: 600; }
+  #alti { position: absolute; right: max(10px, 1.6vw); top: max(52px, 9vh); width: clamp(104px, 21vmin, 168px); height: clamp(104px, 21vmin, 168px); }
+  #hint { position: absolute; left: 50%; bottom: max(10px, 1.6vh); transform: translateX(-50%); color: var(--dim); font-size: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; white-space: nowrap; max-width: 96vw; overflow: hidden; text-overflow: ellipsis; }
+  #hint kbd { font: inherit; color: var(--ink); background: rgba(255,255,255,.12); border-radius: 4px; padding: 0 5px; margin: 0 1px; }
+
+  /* ---------- touch controls ---------- */
+  #touch { position: fixed; inset: 0; pointer-events: none; }
+  #stick { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(10,14,20,.25); left: 86px; bottom: 26px; top: auto; }
+  #stick.free { bottom: auto; }
+  #knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(255,255,255,.82); box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  .btn { pointer-events: auto; position: absolute; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; font: 700 13px/1 inherit; letter-spacing: .06em; display: grid; place-items: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .btn:active { transform: scale(.95); }
+  #btnAct { right: max(18px, 3vw); bottom: max(26px, 5vh); width: 92px; height: 92px; background: rgba(255,122,47,.88); border-color: rgba(255,255,255,.5); font-size: 15px; box-shadow: 0 6px 22px rgba(0,0,0,.35); }
+  #btnAct.dim { background: var(--panel); color: var(--dim); }
+  #btnCam { right: max(22px, 3vw); bottom: calc(max(26px, 5vh) + 106px); width: 54px; height: 54px; font-size: 11px; }
+  #btnPause { right: max(10px, 1.6vw); top: max(8px, 1.4vh); width: 40px; height: 40px; font-size: 14px; }
+  #thr { pointer-events: auto; position: absolute; right: calc(max(18px, 3vw) + 110px); bottom: max(26px, 5vh); width: 46px; height: 150px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); overflow: hidden; }
+  #thrFill { position: absolute; left: 0; right: 0; bottom: 0; height: 60%; background: linear-gradient(to top, rgba(255,122,47,.9), rgba(255,190,90,.9)); }
+  #thr span { position: absolute; left: 0; right: 0; top: 6px; text-align: center; font-size: 10px; letter-spacing: .08em; color: var(--ink); }
+
+  /* ---------- menu / result ---------- */
+  .screen { position: fixed; inset: 0; display: grid; place-items: center; background: linear-gradient(to bottom, rgba(6,10,16,.30), rgba(6,10,16,.72)); padding: 16px; overflow: auto; touch-action: pan-y; }
+  .card { width: min(560px, 100%); background: rgba(10,14,20,.66); border: 1px solid var(--line); border-radius: 20px; padding: clamp(16px, 4vmin, 28px); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+  h1 { margin: 0; font-size: clamp(30px, 8vmin, 52px); letter-spacing: .14em; font-weight: 800; }
+  h1 span { color: var(--accent); }
+  .tag { color: var(--dim); margin: 4px 0 16px; }
+  .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; margin: 14px 0 6px; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  button.big { flex: 1 1 200px; pointer-events: auto; cursor: pointer; border: 0; border-radius: 14px; padding: 15px 16px; font: 700 15px/1.2 inherit; letter-spacing: .04em; color: #1a0d04; background: var(--accent); }
+  button.big.alt { background: rgba(255,255,255,.12); color: var(--ink); border: 1px solid var(--line); }
+  button.big small { display: block; font-weight: 500; opacity: .75; margin-top: 3px; font-size: 12px; letter-spacing: 0; }
+  button.link { background: none; border: 0; color: var(--dim); font: inherit; text-decoration: underline; cursor: pointer; padding: 6px 0; pointer-events: auto; }
+  .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0 4px; color: var(--dim); font-size: 13px; }
+  .keys b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 12px; color: var(--dim); font-size: 13px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .seg button { pointer-events: auto; cursor: pointer; background: none; border: 0; color: var(--dim); font: 600 12px/1 inherit; padding: 7px 11px; }
+  .seg button.on { background: rgba(255,255,255,.16); color: var(--ink); }
+  #credits { font-size: 12.5px; color: var(--dim); max-height: 46vh; overflow: auto; margin-top: 10px; touch-action: pan-y; }
+  #credits a { color: var(--ink); } #credits h3 { color: var(--ink); font-size: 13px; margin: 12px 0 4px; letter-spacing: .06em; }
+  #credits ul { margin: 0; padding-left: 18px; }
+  .stats { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; margin: 12px 0 14px; }
+  .stats span { color: var(--dim); } .stats b { text-align: right; }
+  #score { font-size: clamp(34px, 9vmin, 56px); font-weight: 800; letter-spacing: .04em; }
+  #grade { display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--accent); color: #1a0d04; font-weight: 800; margin-left: 12px; font-size: clamp(18px, 4.6vmin, 28px); vertical-align: middle; position: relative; top: -0.35em; }
+  #rot { display: none; color: var(--warn); font-size: 12.5px; margin-top: 10px; }
+  @media (orientation: portrait) and (pointer: coarse) { #rot { display: block; } }
+  @media (min-width: 1000px) and (min-height: 520px) { #menu { justify-items: start; padding-left: 6vw; } }
+  @media (orientation: portrait) { #banner { top: 33%; } #inst b { min-width: 4.2em; } }
+  @media (max-height: 430px) { #inst { top: 46px; padding: 6px 10px; } #alti { top: 46px; } #banner { top: 15%; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+<div id="whiteout"></div>
+<div id="flash"></div>
+
+<div id="hud" hidden>
+  <div id="top">
+    <div class="pill"><i id="light"></i><b id="phase">JUMP RUN</b></div>
+    <div class="pill"><svg id="dzArrow" viewBox="0 0 16 16"><path d="M8 1l5 12-5-3-5 3z" fill="#fff"/></svg><span class="num" id="dz">DZ 0.0 km</span></div>
+  </div>
+  <div id="banner"></div>
+  <div id="inst"></div>
+  <canvas id="alti" width="336" height="336"></canvas>
+  <div id="hint"></div>
+</div>
+
+<div id="touch" hidden>
+  <div id="stick"><div id="knob"></div></div>
+  <div id="thr"><div id="thrFill"></div><span>THR</span></div>
+  <button class="btn" id="btnCam">CAM</button>
+  <button class="btn" id="btnAct">JUMP</button>
+</div>
+<button class="btn" id="btnPause" hidden>II</button>
+
+<div class="screen" id="menu">
+  <div class="card">
+    <h1>DROP<span>ZONE</span></h1>
+    <div class="tag">Fly the jump plane over the island. Leave it at 13,000 feet.</div>
+    <div id="loading"><div class="bar"><i id="barFill"></i></div><div class="tag" id="loadText">Loading sky, terrain and aircraft…</div></div>
+    <div id="startUI" hidden>
+      <div class="row">
+        <button class="big" id="startAir">Start on jump run<small>In the air at 13,000 ft, drop zone ahead</small></button>
+        <button class="big alt" id="startGround">Take off from the runway<small>Fly it up yourself</small></button>
+        <button class="big alt" id="resume" hidden>Resume</button>
+      </div>
+      <div class="keys" id="keys"></div>
+      <div class="opts">
+        <span>Units</span><span class="seg" id="segUnits"><button data-v="imp" class="on">ft · kt</button><button data-v="met">m · km/h</button></span>
+        <span>Detail</span><span class="seg" id="segQ"><button data-v="auto" class="on">Auto</button><button data-v="high">High</button><button data-v="low">Low</button></span>
+        <span>Sound</span><span class="seg" id="segSnd"><button data-v="on" class="on">On</button><button data-v="off">Off</button></span>
+      </div>
+      <div id="rot">Tip: turn your phone sideways for a wider view.</div>
+      <button class="link" id="creditsBtn">Assets &amp; credits</button>
+      <div id="credits" hidden></div>
+    </div>
+  </div>
+</div>
+
+<div class="screen" id="result" hidden>
+  <div class="card">
+    <div class="tag" id="resTitle" style="margin:0 0 2px">LANDING</div>
+    <div><span id="score" class="num">0</span><span id="grade">A</span></div>
+    <div class="tag" id="resLine"></div>
+    <div class="stats num" id="resStats"></div>
+    <div class="row">
+      <button class="big" id="againAir">Jump again<small>Back on jump run</small></button>
+      <button class="big alt" id="againGround">Take off from the runway</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="game.js"></script>
+</body>
+</html>
